@@ -1,10 +1,13 @@
 # https://fedoraproject.org/wiki/Packaging:Guidelines#PIE
 %define _hardened_build 1
 
+# This can be overriden via command line option, e.g.  --define ?~@~\release 12"
+%{!?release: %define release 3}
+
 Summary:	Fast, scalable and extensible HTTP/1.1 compliant caching proxy server
 Name:		trafficserver
-Version:	8.0.5
-Release:	1%{?dist}
+Version:	8.0.8
+Release:	%{release}%{?dist}
 License:	ASL 2.0
 Group:		System Environment/Daemons
 URL:		http://trafficserver.apache.org/index.html
@@ -14,11 +17,7 @@ Source1:	http://archive.apache.org/dist/%{name}/%{name}-%{version}.tar.bz2.asc
 Source2:	trafficserver.keyring
 Source3:	trafficserver.sysconf
 Source4:	trafficserver.service
-Source5:	trafficserver.tmpfilesd
-Patch1:		trafficserver-init_scripts.patch
 
-Patch101:	trafficserver-8.0.5-require-s-maxage.patch
-Patch102:	trafficserver-8.0.5.return_stale_cache_with_s_maxage.patch
 
 # BuildRoot is only needed for EPEL5:
 BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
@@ -40,16 +39,10 @@ BuildRequires:	yaml-cpp-devel
 BuildRequires:	autoconf automake libtool
 
 Requires: initscripts
-%if %{?fedora}0 > 140 || %{?rhel}0 > 60
 # For systemd.macros
 BuildRequires: systemd
 Requires: systemd
 Requires(postun): systemd
-%else
-Requires(post): chkconfig
-Requires(preun): chkconfig initscripts
-Requires(postun): initscripts
-%endif
 
 %description
 Apache Traffic Server is a fast, scalable and extensible HTTP/1.1 compliant
@@ -72,40 +65,18 @@ Requires: trafficserver = %{version}-%{release}
 %description perl
 The trafficserver-perl package contains perl bindings.
 
+
 %prep
-#gpgv --homedir /tmp --keyring %{SOURCE2} --status-fd=1 %{SOURCE1} %{SOURCE0} | grep -q '^\[GNUPG:\] GOODSIG'
+gpgv --homedir /tmp --keyring %{SOURCE2} --status-fd=1 %{SOURCE1} %{SOURCE0} | grep -q '^\[GNUPG:\] GOODSIG'
 
 %setup -q
-
-%patch1 -p1 -b .init
-%patch101 -p1
-%patch102 -p1
 
 %build
 NOCONFIGURE=1 autoreconf -vif
 scl enable devtoolset-7 "./configure \
-  --enable-layout=opt \
   --prefix=/opt/trafficserver \
-  --includedir=%{_prefix}/include \
-  --datarootdir=%{_prefix}/share \
-  --datadir=%{_prefix}/share \
-  --infodir=%{_prefix}/share/info \
-  --localedir=%{_prefix}/share/locale \
-  --mandir=%{_prefix}/share/man \
-  --docdir=%{_prefix}/share/doc/trafficserver \
-  --htmldir=%{_prefix}/share/doc/trafficserver \
-  --dvidir=%{_prefix}/share/doc/trafficserver \
-  --pdfdir=%{_prefix}/share/doc/trafficserver \
-  --psdir=%{_prefix}/share/doc/trafficserver \
-  --exec-prefix=%{_prefix} \
-  --sysconfdir=/opt/trafficserver/etc --libdir=%{_libdir} \
-  --localstatedir=/opt/trafficserver/var \
-  --libexecdir=%{_prefix}/lib/trafficserver/modules \
-  --with-user=ats --with-group=ats --disable-silent-rules \
-  --enable-experimental-plugins --enable-32bit-build \
-  --enable-mime-sanity-check \
-  --with-yaml-cpp=%{_prefix} \
-  --enable-wccp \
+  --with-user=ats --with-group=ats \
+  --enable-experimental-plugins \
 "
 
 scl enable devtoolset-7 "make %{?_smp_mflags} V=1"
@@ -114,37 +85,20 @@ scl enable devtoolset-7 "make %{?_smp_mflags} V=1"
 rm -rf %{buildroot}
 scl enable devtoolset-7 "make DESTDIR=%{buildroot} install"
 
-# Remove duplicate man-pages:
-rm -rf %{buildroot}%{_docdir}/trafficserver
+## Remove duplicate man-pages:
+#rm -rf %{buildroot}%{_docdir}/trafficserver
 
 mkdir -p %{buildroot}%{_sysconfdir}/sysconfig
 install -m 644 -p %{SOURCE3} \
    %{buildroot}%{_sysconfdir}/sysconfig/trafficserver
 
-%if %{?fedora}0 > 140 || %{?rhel}0 > 60
 install -D -m 0644 -p %{SOURCE4} \
    %{buildroot}/lib/systemd/system/trafficserver.service
-install -D -m 0644 -p %{SOURCE5} \
-   %{buildroot}%{_sysconfdir}/tmpfiles.d/trafficserver.conf
-%else
-mkdir -p %{buildroot}/etc/init.d/
-mv %{buildroot}%{_prefix}/bin/trafficserver %{buildroot}/etc/init.d
-%endif
 
 # Remove libtool archives and static libs
 find %{buildroot} -type f -name "*.la" -delete
 find %{buildroot} -type f -name "*.a" -delete
 
-rm -f %{buildroot}/%{_prefix}/lib/perl5/x86_64-linux-thread-multi/perllocal.pod
-rm -f %{buildroot}/%{_prefix}/lib/perl5/x86_64-linux-thread-multi/auto/Apache/TS/.packlist
-
-#
-perl -pi -e 's/^CONFIG.*proxy.config.proxy_name STRING.*$/CONFIG proxy.config.proxy_name STRING FIXME.example.com/' \
-	%{buildroot}/etc/trafficserver/records.config
-perl -pi -e 's/^CONFIG.*proxy.config.ssl.server.cert.path.*$/CONFIG proxy.config.ssl.server.cert.path STRING \/etc\/pki\/tls\/certs\//' \
-	%{buildroot}/etc/trafficserver/records.config
-perl -pi -e 's/^CONFIG.*proxy.config.ssl.server.private_key.path.*$/CONFIG proxy.config.ssl.server.private_key.path STRING \/etc\/pki\/tls\/private\//' \
-	%{buildroot}/etc/trafficserver/records.config
 
 %check
 %ifnarch ppc64
@@ -159,17 +113,7 @@ rm -rf %{buildroot}
 
 %post
 /sbin/ldconfig
-%if %{?fedora}0 > 170 || %{?rhel}0 > 60
-  %systemd_post trafficserver.service
-%else
-  if [ $1 -eq 1 ] ; then
-  %if %{?fedora}0 > 140
-    /bin/systemctl daemon-reload >/dev/null 2>&1 || :
-  %else
-    /sbin/chkconfig --add %{name}
-  %endif
-  fi
-%endif
+%systemd_post trafficserver.service
 
 %pre
 getent group ats >/dev/null || groupadd -r ats -g 176 &>/dev/null
@@ -178,54 +122,37 @@ useradd -r -u 176 -g ats -d / -s /sbin/nologin \
 	-c "Apache Traffic Server" ats &>/dev/null
 
 %preun
-%if %{?fedora}0 > 170 || %{?rhel}0 > 60
-  %systemd_preun trafficserver.service
-%else
-if [ $1 -eq 0 ] ; then
-  /sbin/service %{name} stop > /dev/null 2>&1
-  /sbin/chkconfig --del %{name}
-fi
-%endif
+%systemd_preun trafficserver.service
 
 %postun
 /sbin/ldconfig
 
-%if %{?fedora}0 > 170 || %{?rhel}0 > 60
-  %systemd_postun_with_restart trafficserver.service
-%else
-if [ $1 -eq 1 ] ; then
-  /sbin/service trafficserver condrestart &>/dev/null || :
-fi
-%endif
+%systemd_postun_with_restart trafficserver.service
+
 
 %files
 %defattr(-, ats, ats, -)
 %{!?_licensedir:%global license %%doc}
 %license LICENSE
 %doc README NOTICE
-%attr(0755, ats, ats) %dir /opt/trafficserver/etc
-%config(noreplace) /opt/trafficserver/etc/*
+%attr(0755, ats, ats) %dir /opt/trafficserver/etc/trafficserver
+%config(noreplace) /opt/trafficserver/etc/trafficserver/*
 %config(noreplace) %{_sysconfdir}/sysconfig/trafficserver
-%{_bindir}/traffic*
-%{_bindir}/tspush
-%dir %{_prefix}/lib/trafficserver/modules
-%{_libdir}/libts*.so
-%{_libdir}/libts*.so.8*
-%{_prefix}/lib/trafficserver/modules/*.so
-%if %{?fedora}0 > 140 || %{?rhel}0 > 60
+/opt/trafficserver/bin/traffic*
+/opt/trafficserver/bin/tspush
+%dir /opt/trafficserver/libexec/trafficserver
+/opt/trafficserver/lib/libts*.so
+/opt/trafficserver/lib/libts*.so.8*
+/opt/trafficserver/libexec/trafficserver/*.so
 /lib/systemd/system/trafficserver.service
-%config(noreplace) %{_sysconfdir}/tmpfiles.d/trafficserver.conf
-%else
-/etc/init.d/trafficserver
-%endif
 %attr(0755, ats, ats) %dir /opt/trafficserver/var
-%attr(0755, ats, ats) %dir /opt/trafficserver/var/cache
-%attr(0755, ats, ats) %dir /opt/trafficserver/var/run
-%attr(0755, ats, ats) %dir /opt/trafficserver/var/logs
+#%attr(0755, ats, ats) %dir /opt/trafficserver/var/cache
+#%attr(0755, ats, ats) %dir /opt/trafficserver/var/run
+%attr(0755, ats, ats) %dir /opt/trafficserver/var/log/trafficserver
 
 %files perl
 %defattr(-,root,root,-)
-%{_prefix}/share/man/man3/*
+/opt/trafficserver/share/man/man3/*
 /opt/trafficserver/lib/perl5/Apache/TS.pm
 /opt/trafficserver/lib/perl5/Apache/TS/*
 /opt/trafficserver/lib/perl5/x86_64-linux-thread-multi/auto/Apache/TS/.packlist
@@ -233,11 +160,14 @@ fi
 
 %files devel
 %defattr(-,root,root,-)
-%{_bindir}/tsxs
-%{_includedir}/ts
-%{_includedir}/tscpp/api
-%{_includedir}/tscpp/util/
-%{_libdir}/pkgconfig/trafficserver.pc
+/opt/trafficserver/bin/tsxs
+/opt/trafficserver/include/ts
+/opt/trafficserver/include/tscpp/api
+/opt/trafficserver/include/tscpp/util/
+/opt/trafficserver/lib/pkgconfig/trafficserver.pc
+
+
+
 
 %changelog
 * Fri Sep 13 2019 Hiroaki Nakamura <hnakamur@gmail.com> 8.0.5-1
