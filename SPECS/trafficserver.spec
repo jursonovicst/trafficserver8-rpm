@@ -2,7 +2,7 @@
 %define _hardened_build 1
 
 # This can be overriden via command line option, e.g.  --define ?~@~\release 12"
-%{!?release: %define release 3}
+%{!?release: %define release 6}
 
 Summary:	Fast, scalable and extensible HTTP/1.1 compliant caching proxy server
 Name:		trafficserver
@@ -17,6 +17,8 @@ Source1:	http://archive.apache.org/dist/%{name}/%{name}-%{version}.tar.bz2.asc
 Source2:	trafficserver.keyring
 Source3:	trafficserver.sysconf
 Source4:	trafficserver.service
+
+Patch1:		layout.patch
 
 
 # BuildRoot is only needed for EPEL5:
@@ -71,11 +73,14 @@ gpgv --homedir /tmp --keyring %{SOURCE2} --status-fd=1 %{SOURCE1} %{SOURCE0} | g
 
 %setup -q
 
+%patch1 -p1
+
 %build
 NOCONFIGURE=1 autoreconf -vif
 scl enable devtoolset-7 "./configure \
-  --prefix=/opt/trafficserver \
+  --enable-layout=TrafficControl \
   --with-user=ats --with-group=ats \
+  --with-build-number=%{release} \
   --enable-experimental-plugins \
 "
 
@@ -131,24 +136,31 @@ useradd -r -u 176 -g ats -d / -s /sbin/nologin \
 
 
 %files
-%defattr(-, ats, ats, -)
+%defattr(-,root,root)
 %{!?_licensedir:%global license %%doc}
 %license LICENSE
 %doc README NOTICE
-%attr(0755, ats, ats) %dir /opt/trafficserver/etc/trafficserver
-%config(noreplace) /opt/trafficserver/etc/trafficserver/*
-%config(noreplace) %{_sysconfdir}/sysconfig/trafficserver
+%dir /opt/trafficserver/etc
+%attr(-,ats,ats) %dir /opt/trafficserver/etc/trafficserver
+%config(noreplace) %attr(644,ats,ats) /opt/trafficserver/etc/trafficserver/*
+/opt/trafficserver/etc/trafficserver/body_factory
+/opt/trafficserver/etc/trafficserver/trafficserver-release
 /opt/trafficserver/bin/traffic*
 /opt/trafficserver/bin/tspush
 %dir /opt/trafficserver/libexec/trafficserver
 /opt/trafficserver/lib/libts*.so
 /opt/trafficserver/lib/libts*.so.8*
 /opt/trafficserver/libexec/trafficserver/*.so
-/lib/systemd/system/trafficserver.service
-%attr(0755, ats, ats) %dir /opt/trafficserver/var
+%dir /opt/trafficserver/var
+%attr(-,ats,ats) /opt/trafficserver/var/trafficserver
+%dir /opt/trafficserver/var/log
+%attr(-,ats,ats) /opt/trafficserver/var/log/trafficserver
+
 #%attr(0755, ats, ats) %dir /opt/trafficserver/var/cache
 #%attr(0755, ats, ats) %dir /opt/trafficserver/var/run
-%attr(0755, ats, ats) %dir /opt/trafficserver/var/log/trafficserver
+
+%config(noreplace) %{_sysconfdir}/sysconfig/trafficserver
+/lib/systemd/system/trafficserver.service
 
 %files perl
 %defattr(-,root,root,-)
