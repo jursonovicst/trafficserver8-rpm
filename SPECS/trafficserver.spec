@@ -2,7 +2,7 @@
 %define _hardened_build 1
 
 # This can be overriden via command line option, e.g.  --define ?~@~\release 12"
-%{!?release: %define release 6}
+%{!?release: %define release 7}
 
 Summary:	Fast, scalable and extensible HTTP/1.1 compliant caching proxy server
 Name:		trafficserver
@@ -18,7 +18,6 @@ Source2:	trafficserver.keyring
 Source3:	trafficserver.sysconf
 Source4:	trafficserver.service
 
-Patch1:		layout.patch
 
 
 # BuildRoot is only needed for EPEL5:
@@ -73,12 +72,11 @@ gpgv --homedir /tmp --keyring %{SOURCE2} --status-fd=1 %{SOURCE1} %{SOURCE0} | g
 
 %setup -q
 
-%patch1 -p1
 
 %build
 NOCONFIGURE=1 autoreconf -vif
 scl enable devtoolset-7 "./configure \
-  --enable-layout=TrafficControl \
+  --prefix=/opt/trafficserver \
   --with-user=ats --with-group=ats \
   --with-build-number=%{release} \
   --enable-experimental-plugins \
